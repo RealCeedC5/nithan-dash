@@ -594,13 +594,14 @@ Object.assign(ACT, {
   skill: (b, i) => { SOLO.skill = +i; show('levels'); },
   go: () => startSolo(SOLO.level),
   how: () => show('how'),
-  joinScreen: () => show('join'),
+  joinScreen: () => { if (window.PREVIEW) return show('wait', t('preview_online')); show('join'); },
   connect: () => {
     const code = ($('codeIn').value || '').trim().toUpperCase();
     $('netStatus').textContent = t('connecting');
     joinRoom(code, { name: myName(), look: myLook() }, () => show('lobby'), msg => { if (SCREEN === 'join') $('netStatus').textContent = msg; });
   },
   host: () => {
+    if (window.PREVIEW) return show('wait', t('preview_online'));
     show('wait', t('opening'));
     hostRoom({ name: myName(), look: myLook() }, () => { if (SCREEN === 'wait') show('lobby'); }, msg => { if (SCREEN === 'wait') $('netStatus').textContent = msg; });
   },
