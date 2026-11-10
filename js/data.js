@@ -48,6 +48,10 @@ const ITEM_ODDS = {
   back:   { boost: 30, wing: 25, cloud: 20, freeze: 20, shield: 5 },
 };
 
+/* ---------- medal times in seconds: gold, silver, bronze ---------- */
+const PAR = { sangthong: [51, 57, 68], plabuthong: [54, 61, 74], kraithong: [48, 54, 66], kaewnama: [42, 47, 58] };
+function medalFor(levelId, time) { const p = PAR[levelId]; if (!p || time == null) return 0; return time <= p[0] ? 3 : time <= p[1] ? 2 : time <= p[2] ? 1 : 0; }
+
 /* ---------- themes: one per folk tale ---------- */
 const THEMES = {
   sangthong: {

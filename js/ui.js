@@ -21,6 +21,7 @@ function resize() {
   DPR = Math.min(devicePixelRatio || 1, 2);
   ov.width = Math.round(cw * DPR); ov.height = Math.round(ch * DPR);
   g.imageSmoothingEnabled = false;
+  VIG = null;
 }
 addEventListener('resize', resize);
 
@@ -36,9 +37,11 @@ const myName = () => (PROFILE.name || '').trim() || L10(RUNNERS[PROFILE.r].name)
 const fmtTime = s => { if (s == null) return t('dnf'); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r.toFixed(2); };
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const SOLO = { level: 0, skill: 1 };
+const MEDAL_COL = ['', '#c8834a', '#c9d2dc', '#ffd34d'];
+const medalDot = (m, big) => m ? `<i class="medal m${m}${big ? ' big' : ''}" title="${esc(t('medal_' + m))}"></i>` : '';
 
 /* ---------- input ---------- */
-const IN = { left: false, right: false, down: false, jumpHeld: false, jumpQueued: false, itemQueued: false, respawnQueued: false };
+const IN = { left: false, right: false, down: false, jumpHeld: false, jumpQueued: false, itemQueued: false, respawnQueued: false, rightAt: -99 };
 const KEYMAP = {
   ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowDown: 'down', KeyS: 'down',
   Space: 'jump', ArrowUp: 'jump', KeyW: 'jump', KeyZ: 'jump', KeyK: 'jump',
@@ -48,7 +51,7 @@ function press(act, on) {
   if (act === 'jump') { if (on && !IN.jumpHeld) IN.jumpQueued = true; IN.jumpHeld = on; }
   else if (act === 'item') { if (on) IN.itemQueued = true; }
   else if (act === 'respawn') { if (on) IN.respawnQueued = true; }
-  else IN[act] = on;
+  else { if (act === 'right' && on && !IN.right && RACE.on) IN.rightAt = raceClock(); IN[act] = on; }
 }
 addEventListener('keydown', e => {
   ensureAudio();
@@ -64,7 +67,7 @@ if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch'
 
 for (const [id, act] of [['tLeft', 'left'], ['tRight', 'right'], ['tSlide', 'down'], ['tJump', 'jump'], ['tItem', 'item']]) {
   const b = $(id);
-  const on = e => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ } b.classList.add('on'); press(act, true); };
+  const on = e => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ } b.classList.add('on'); press(act, true); buzz(8); };
   const off = e => { e.preventDefault(); b.classList.remove('on'); press(act, false); };
   b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('lostpointercapture', off);
   b.addEventListener('contextmenu', e => e.preventDefault());
@@ -72,232 +75,235 @@ for (const [id, act] of [['tLeft', 'left'], ['tRight', 'right'], ['tSlide', 'dow
 $('itemSlot').addEventListener('click', () => press('item', true));
 $('pauseBtn').addEventListener('click', () => togglePause());
 
-/* ---------- particles and messages ---------- */
-const PARTS = [];
-function burst(x, y, col, n, spd, opts = {}) {
-  for (let i = 0; i < n; i++) {
-    const a = opts.up ? -Math.PI / 2 + (Math.random() - 0.5) * 2.2 : Math.random() * Math.PI * 2, v = spd * (0.4 + Math.random() * 0.8);
-    PARTS.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: opts.life || 0.5 + Math.random() * 0.4, t: 0, col: Array.isArray(col) ? col[i % col.length] : col, s: opts.size || 2, g: opts.g ?? 300 });
-  }
-}
-function stepParts(dt) {
-  for (let i = PARTS.length - 1; i >= 0; i--) {
-    const p = PARTS[i]; p.t += dt;
-    if (p.t >= p.life) { PARTS.splice(i, 1); continue; }
-    p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt;
-  }
-}
+/* ---------- messages ---------- */
 let toastTimer = 0;
 function toast(msg, ms = 1400) { const el = $('toast'); el.textContent = msg; el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), ms); }
 let bigText = '';
 function setBig(s, pop) { const el = $('big'); if (s === bigText) return; bigText = s; el.textContent = s; if (pop) { el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); } }
 
-function handleFx(r) {
-  if (!r.fx.length) return;
-  const isMe = r === RACE.me && !RACE.demo;
-  const near = Math.abs(r.x - (CAM.x + VW / 2)) < VW;
-  for (const f of r.fx) {
-    const fx = r.x, fy = r.y;
-    if (near) {
-      if (f === 'jump' || f === 'land') burst(fx, fy - 1, '#e8dcc8', 4, 50, { up: true, life: 0.3, g: 100 });
-      else if (f === 'djump') burst(fx, fy - 4, '#ffffff', 8, 70, { life: 0.35, g: 0 });
-      else if (f === 'step' && Math.random() < 0.4) burst(fx - r.face * 4, fy - 1, '#d8ccb8', 1, 20, { up: true, life: 0.25, g: 60 });
-      else if (f === 'hit' || f === 'crush') burst(fx, fy - 18, ['#ffe14d', '#ffffff'], 10, 110, { g: 0, life: 0.45 });
-      else if (f === 'slip') burst(fx, fy - 4, ['#f5d33b', '#ffffff'], 10, 90, { up: true });
-      else if (f === 'splash') burst(fx, fy - 4, [RACE.lv.th.water, '#ffffff'], 16, 140, { up: true, life: 0.7 });
-      else if (f === 'fall') burst(fx, Math.min(fy, RACE.lv.pxH - 8), '#ffffff', 10, 80, { up: true });
-      else if (f === 'respawn') burst(fx, fy - 12, ['#ffd34d', '#ffffff'], 14, 90, { g: 0, life: 0.4 });
-      else if (f === 'box') burst(fx, fy - 26, ['#ffd34d', '#ffe88a', '#ff6a50'], 12, 100, { g: 120 });
-      else if (f === 'block') burst(fx, fy - 12, '#ffd34d', 14, 120, { g: 0, life: 0.35 });
-      else if (f === 'frozen') burst(fx, fy - 12, ['#bfeaff', '#ffffff'], 14, 100, { g: 50 });
-      else if (f === 'spring') burst(fx, fy, '#ffffff', 8, 90, { up: true, life: 0.3 });
-      else if (f === 'boost') burst(fx - 8, fy - 10, '#bfeaff', 6, 60, { g: 0, life: 0.3 });
-      else if (f === 'finish') burst(fx, fy - 30, ['#ffd34d', '#ff6a50', '#3f7fd8', '#3fae6a', '#ffffff'], 40, 180, { up: true, life: 1.2 });
-      else if (f.startsWith('use:')) burst(fx, fy - 14, ITEMS[f.slice(4)].col, 12, 90, { g: 0, life: 0.4 });
-    }
-    if (isMe) {
-      const snd = f.startsWith('use:') ? 'use' : f === 'crush' ? 'hit' : f;
-      sfx(snd);
-      if (f === 'box') toast(L10(ITEMS[r.item]?.name || {}), 1200);
-      if (f === 'checkpoint') toast('✓ ' + t('checkpoint'), 900);
-      if (f === 'finish') { setBig(t('finish'), true); }
-    } else if (!RACE.demo && near && (f === 'hit' || f === 'splash' || f === 'box')) sfx(f);
-  }
-  r.fx.length = 0;
-}
-
 /* ---------- camera ---------- */
-const CAM = { x: 0, y: 0, snap: true };
-function focusRunner() {
-  if (RACE.demo) return ranking()[0];
-  return RACE.me;
-}
+const CAM = { x: 0, y: 0, snap: true, look: 0 };
+function focusRunner() { return RACE.demo ? ranking()[0] : RACE.me; }
 function updateCamera(dt) {
   const lv = RACE.lv, r = focusRunner();
   if (!r) return;
-  const tx = clamp(r.x - VW * 0.36, 0, lv.pxW - VW), ty = clamp(r.y - VH * 0.66, 0, lv.pxH - VH - 22);
-  if (CAM.snap) { CAM.x = tx; CAM.y = ty; CAM.snap = false; return; }
+  CAM.look += (clamp(r.vx * 0.2, -26, 44) - CAM.look) * Math.min(1, dt * 2.5);      // look a little ahead of where you are heading
+  const tx = clamp(r.x - VW * 0.37 + CAM.look, 0, lv.pxW - VW), ty = clamp(r.y - VH * 0.66 + (r.vy > 320 ? 14 : 0), 0, lv.pxH - VH - 22);
+  if (CAM.snap) { CAM.x = tx; CAM.y = ty; CAM.snap = false; CAM.look = 0; return; }
   CAM.x += (tx - CAM.x) * Math.min(1, dt * 9);
-  CAM.y += (ty - CAM.y) * Math.min(1, dt * 5);
+  CAM.y += (ty - CAM.y) * Math.min(1, dt * (Math.abs(ty - CAM.y) > 40 ? 7 : 4));
 }
 
-/* ---------- rendering ---------- */
-function drawRunner(r, now, isMe) {
+/* ---------- runners ---------- */
+function drawRunner(r, now, isMe, dt) {
   if (r.dead) return;
-  const S = runnerSprites(r.look);
+  const S = runnerSprites(r.look), V = vis(r), lv = RACE.lv;
   let pose = r.anim, k = 0, rot = 0;
-  if (pose === 'run') k = ((Math.floor(r.x / 9) % 6) + 6) % 6;
-  else if (pose === 'idle' || pose === 'frozen') { k = Math.floor(now / 450) % 2; pose = 'idle'; }
-  else if (pose === 'win') k = Math.floor(now / 220) % 2;
+  if (pose === 'run') k = ((Math.floor(r.x / 6.5) % 8) + 8) % 8;
+  else if (pose === 'idle' || pose === 'frozen') { k = Math.floor(now / 420 + (r.id.charCodeAt(r.id.length - 1) % 4)) % 4; pose = 'idle'; }
+  else if (pose === 'win') k = Math.floor(now / 200) % 2;
   else if (pose === 'spin') { pose = 'jump'; rot = (r.face || 1) * (1 - Math.max(0, r.spin) / 0.35) * Math.PI * 2; }
   else if (pose === 'fly') pose = 'jump';
-  const frames = S[pose] || S.idle;
-  const fr = frames[Math.min(k, frames.length - 1)][r.face < 0 ? 1 : 0];
+  const frames = S[pose] || S.idle, fi = Math.min(k, frames.length - 1), side = r.face < 0 ? 1 : 0, fr = frames[fi][side];
   const x = Math.round(r.x), y = Math.round(r.y);
-  g.save();
-  g.globalAlpha = isMe ? 1 : 0.88;
-  if (r.invT > 0 && r.frozenT <= 0 && Math.floor(now / 70) % 2) g.globalAlpha *= 0.45;
+  /* shadow on whatever is below */
+  const gy = r.ground ? y : groundUnder(lv, r.x, r.y - 2);
+  if (gy >= 0 && gy - y < 96) { const k2 = 1 - (gy - y) / 96; dropShadow(g, x, gy, 6 + 8 * k2, 0.3 * k2); }
+  /* afterimages at speed */
+  const fast = (r.boostT > 0 && Math.abs(r.vx) > 150) || Math.abs(r.vx) > 225;
+  if (fast && S.ghost[pose] && now - V.trailT > 42) { V.trailT = now; V.trail.push({ x, y, pose, fi, side, at: now }); }
+  while (V.trail.length && now - V.trail[0].at > 230) V.trail.shift();
+  for (const tr of V.trail) { g.globalAlpha = 0.42 * (1 - (now - tr.at) / 230); g.drawImage(S.ghost[tr.pose][tr.fi][tr.side], tr.x - 9, tr.y - 25); }
+  g.globalAlpha = isMe ? 1 : 0.92;
+  if (r.invT > 0 && r.frozenT <= 0 && Math.floor(now / 70) % 2) g.globalAlpha *= 0.4;
   if (r.wingT > 0) {
-    const flap = Math.sin(now / 60) * 3;
-    g.fillStyle = '#ff9a3c'; g.fillRect(x - 13 * r.face, y - 20 - flap, 9, 3); g.fillRect(x - 15 * r.face, y - 17 - flap, 9, 3);
-    g.fillStyle = '#ffd27a'; g.fillRect(x - 12 * r.face, y - 14 - flap / 2, 7, 2);
+    const flap = Math.round(Math.sin(now / 55) * 3), f = r.face;
+    for (let i = 0; i < 4; i++) { PX(g, ['#e07a1c', '#ff9a3c', '#ffb85c', '#ffd27a'][i], x - f * (8 + i * 3) - (f > 0 ? 4 : 0), y - 21 + i * 2 - flap * (i / 3), 5 + i, 2); }
+    PX(g, '#ffe8a8', x - f * 18 - (f > 0 ? 3 : 0), y - 14 - flap, 4, 1);
   }
-  if (rot) { g.translate(x, y - 12); g.rotate(rot); g.drawImage(fr, -9, -13); g.setTransform(1, 0, 0, 1, -Math.round(CAM.x), -Math.round(CAM.y)); }
-  else g.drawImage(fr, x - 9, y - 25);
+  /* squash on landing, stretch on take-off */
+  let sx = 1, sy = 1;
+  if (V.sq > 0) { V.sq -= dt; const p = clamp(V.sq / 0.14, 0, 1); if (V.kind < 0) { sx = 1 + 0.22 * p; sy = 1 - 0.2 * p; } else { sx = 1 - 0.15 * p; sy = 1 + 0.2 * p; } }
+  if (rot || sx !== 1) {
+    g.save(); g.translate(x, rot ? y - 12 : y); if (rot) g.rotate(rot); else g.scale(sx, sy);
+    g.drawImage(fr, -9, rot ? -13 : -25); g.restore();
+  } else g.drawImage(fr, x - 9, y - 25);
+  if (V.hitT > 0) { V.hitT -= dt; if (S.ghost[pose]) { g.globalAlpha = 0.85; g.drawImage(S.ghost[pose][fi][side], x - 9, y - 25); } else { g.globalAlpha = 0.6; PX(g, '#ffffff', x - 6, y - 23, 12, 22); } }
   g.globalAlpha = 1;
-  if (r.boostT > 0 && Math.abs(r.vx) > 100) {
-    g.fillStyle = 'rgba(191,234,255,.8)';
-    for (let i = 0; i < 3; i++) g.fillRect(x - r.face * (12 + i * 6) - 3, y - 18 + i * 5 + ((now / 40 + i) % 3), 6, 1);
-  }
-  if (r.shieldT > 0) {
-    g.strokeStyle = `rgba(255,211,77,${0.55 + Math.sin(now / 120) * 0.25})`; g.lineWidth = 1.5;
-    g.beginPath(); g.arc(x, y - r.h / 2 - 1, r.h > 14 ? 15 : 11, 0, 7); g.stroke();
+  if (r.boostT > 0 && Math.abs(r.vx) > 100) for (let i = 0; i < 4; i++) { g.fillStyle = `rgba(191,234,255,${0.85 - i * 0.15})`; g.fillRect(x - r.face * (12 + i * 7) - 4, y - 20 + i * 5 + Math.floor((now / 40 + i) % 3), 8, 1); }
+  if (r.draft > 0.6 && r.ground) for (let i = 0; i < 3; i++) { g.fillStyle = 'rgba(255,255,255,.5)'; g.fillRect(x + r.face * (10 + ((now / 30 + i * 9) % 14)) - 2, y - 19 + i * 6, 5, 1); }
+  if (r.shieldT > 0) {       // the yantra cloth: a turning ring of gold marks
+    const rad = r.h > 14 ? 15 : 11, cy = y - r.h / 2 - 1, a = 0.7 + Math.sin(now / 120) * 0.25;
+    g.fillStyle = `rgba(255,243,168,${a * 0.14})`; for (let dy = -rad; dy <= rad; dy++) { const w = Math.floor(Math.sqrt(rad * rad - dy * dy)); g.fillRect(x - w, Math.round(cy) + dy, w * 2 + 1, 1); }
+    for (let i = 0; i < 28; i++) { const an = i / 28 * 6.2832 + now / 700, big = i % 7 === 0; g.fillStyle = big ? `rgba(255,255,255,${a})` : `rgba(255,211,77,${a})`; g.fillRect(Math.round(x + Math.cos(an) * rad) - (big ? 1 : 0), Math.round(cy + Math.sin(an) * rad) - (big ? 1 : 0), big ? 2 : 1, big ? 2 : 1); }
   }
   if (r.frozenT > 0) {
-    g.fillStyle = 'rgba(191,234,255,.6)'; g.fillRect(x - 9, y - 26, 18, 26);
-    g.fillStyle = 'rgba(255,255,255,.85)'; g.fillRect(x - 7, y - 24, 3, 8); g.fillRect(x + 3, y - 10, 2, 5);
+    g.fillStyle = 'rgba(160,214,255,.55)'; g.fillRect(x - 10, y - 27, 20, 27);
+    g.fillStyle = 'rgba(255,255,255,.9)'; g.fillRect(x - 10, y - 27, 20, 1); g.fillRect(x - 10, y - 27, 1, 27); g.fillRect(x - 7, y - 24, 3, 8); g.fillRect(x + 3, y - 10, 2, 5);
+    g.fillStyle = 'rgba(90,150,220,.8)'; g.fillRect(x + 9, y - 27, 1, 27); g.fillRect(x - 10, y - 1, 20, 1);
   }
   if (r.stunT > 0 || (r.remote && r.anim === 'stun')) {
-    for (let i = 0; i < 3; i++) { const a = now / 160 + i * 2.1; g.fillStyle = '#ffe14d'; g.fillRect(Math.round(x + Math.cos(a) * 8), Math.round(y - 28 + Math.sin(a) * 2), 2, 2); }
+    for (let i = 0; i < 3; i++) { const a = now / 150 + i * 2.1, sx2 = Math.round(x + Math.cos(a) * 9), sy2 = Math.round(y - 29 + Math.sin(a) * 2.5); PX(g, '#ffe14d', sx2 - 1, sy2, 3, 1); PX(g, '#ffe14d', sx2, sy2 - 1, 1, 3); }
   }
   if (r.slowT > 0) {
-    g.fillStyle = '#8aa0b8'; g.fillRect(x - 8, y - 38, 16, 5); g.fillRect(x - 5, y - 40, 9, 2);
-    g.fillStyle = '#4fb0e8'; for (let i = 0; i < 3; i++) g.fillRect(x - 6 + i * 5, y - 32 + ((now / 50 + i * 3) % 6), 1, 2);
+    PX(g, '#6a7f98', x - 9, y - 38, 18, 5); PX(g, '#8aa0b8', x - 9, y - 39, 18, 4); PX(g, '#8aa0b8', x - 6, y - 42, 6, 3); PX(g, '#a8bcd0', x - 1, y - 43, 7, 4); PX(g, '#c8d8e8', x, y - 43, 4, 1);
+    g.fillStyle = '#6ac0f0'; for (let i = 0; i < 4; i++) g.fillRect(x - 7 + i * 4, y - 33 + Math.floor((now / 45 + i * 3) % 7), 1, 2);
   }
-  g.restore();
 }
 
-function render(now) {
-  const lv = RACE.lv, th = lv.th, t = RACE.simT, tt = now / 1000;
+/* ---------- world ---------- */
+/* copy the visible part of a level-sized canvas, never reading outside it */
+function blit(img, cx, cy) {
+  const sx = Math.max(0, cx), sy = Math.max(0, cy), w = Math.min(cx + VW, img.width) - sx, h = Math.min(cy + VH, img.height) - sy;
+  if (w > 0 && h > 0) g.drawImage(img, sx, sy, w, h, sx, sy, w, h);
+}
+function render(now, dt) {
+  const lv = RACE.lv, t = RACE.simT, tt = now / 1000;
   g.setTransform(1, 0, 0, 1, 0, 0);
-  drawSky(g, th, VW, tt);
-  const layers = backdrop(lv.theme), f = [0.12, 0.3, 0.55];
-  layers.forEach((L, i) => {
-    const off = -((CAM.x * f[i]) % 512), yo = Math.round((lv.pxH - VH - CAM.y) * f[i] * 0.5);
-    for (let x = off; x < VW; x += 512) g.drawImage(L, Math.round(x), yo);
-  });
-  const cx = Math.round(CAM.x), cy = Math.round(CAM.y);
+  drawSky(g, lv.theme, VW, tt, CAM.x);
+  drawBackdrop(g, lv.theme, CAM.x, lv.pxH - VH - CAM.y, VW);
+  const sh = shakeOffset(dt);
+  const cx = Math.round(CAM.x) + sh[0], cy = Math.round(CAM.y) + sh[1];
   g.setTransform(1, 0, 0, 1, -cx, -cy);
-  const vis = (x, m = 48) => x > cx - m && x < cx + VW + m;
+  const seen = (x, m = 48) => x > cx - m && x < cx + VW + m;
   const x0 = Math.max(0, Math.floor(cx / TILE) - 1), x1 = Math.min(lv.W - 1, x0 + Math.ceil(VW / TILE) + 2);
-  for (const w of lv.winds) if (vis(w.x)) drawWind(g, w, tt);
-  g.drawImage(lv.art, cx, cy, VW, VH, cx, cy, VW, VH);
+  for (const w of lv.winds) if (seen(w.x)) drawWind(g, w, tt);
+  blit(lv.art, cx, cy);
+  drawGlows(g, lv, cx, VW, tt);
   drawWater(g, lv, x0, x1, tt);
   drawBoostPads(g, lv, x0, x1, tt);
-  for (const p of lv.plats) if (vis(p.x, 64)) drawPlat(g, p, lv.theme);
+  for (const p of lv.plats) if (seen(p.x, 110)) drawPlat(g, p, lv.theme, tt);
   const me = RACE.me;
-  lv.cps.forEach((cp, i) => { if (i > 0 && vis(cp.x)) drawFlag(g, cp, me && me.cp >= i, tt); });
-  if (vis(lv.finishX, 60)) drawFinish(g, lv.finishX, lv.finishY);
-  for (const b of lv.boxes) if (vis(b.x)) drawBox(g, b, tt, !me || RACE.demo || (me.boxT[b.id] ?? -9) <= t - 2.5);
+  lv.cps.forEach((cp, i) => { if (i > 0 && seen(cp.x)) drawFlag(g, cp, me && me.cp >= i, tt); });
+  if (seen(lv.finishX, 70)) drawFinish(g, lv.finishX, lv.finishY, tt);
+  for (const b of lv.boxes) if (seen(b.x)) drawBox(g, b, tt, !me || RACE.demo || (me.boxT[b.id] ?? -9) <= t - 2.5);
   for (const h of lv.haz) {
     const hx = h.px ?? h.x ?? h.x0;
-    if (h.type === 'roll' ? (hx > cx - 20 && hx - h.dist < cx + VW + 20) : vis(hx, 90)) drawHazard(g, h, hazPos(h, t), lv.theme);
+    if (h.type === 'roll' ? (hx > cx - 20 && hx - h.dist < cx + VW + 20) : seen(hx, 90)) drawHazard(g, lv, h, hazPos(h, t), tt);
   }
-  for (const tr of RACE.traps) if (vis(tr.x)) drawTrap(g, tr);
-  for (const r of RACE.runners) if (r !== me && vis(r.x)) drawRunner(r, now, false);
-  if (me && !RACE.demo) drawRunner(me, now, true); else if (me) drawRunner(me, now, false);
+  for (const tr of RACE.traps) if (seen(tr.x)) drawTrap(g, tr);
+  for (const r of RACE.runners) if (r !== me && seen(r.x, 80)) drawRunner(r, now, false, dt);
+  if (me) drawRunner(me, now, !RACE.demo, dt);
+  blit(lv.fore, cx, cy);
   /* spell orbs */
   for (let i = RACE.orbs.length - 1; i >= 0; i--) {
     const o = RACE.orbs[i], to = runnerById(o.to), p = (t - o.t0) / o.dur;
-    if (!to || p >= 1) { if (to) burst(to.x, to.y - 12, '#b58cff', 10, 80, { g: 0, life: 0.35 }); RACE.orbs.splice(i, 1); continue; }
-    const ox = o.x + (to.x - o.x) * p, oy = o.y + (to.y - 14 - o.y) * p - Math.sin(Math.PI * p) * 30;
-    g.fillStyle = '#7a4fd0'; g.fillRect(ox - 4, oy - 4, 8, 8); g.fillStyle = '#e8dcff'; g.fillRect(ox - 2, oy - 3, 3, 3);
-    if (Math.random() < 0.5) burst(ox, oy, '#b58cff', 1, 20, { g: 0, life: 0.3 });
+    if (!to || p >= 1) { if (to) { burst(to.x, to.y - 12, ['#b58cff', '#ffffff'], 12, 90, { g: 0, life: 0.35 }); ring(to.x, to.y - 12, '#b58cff', 18, 0.3); } RACE.orbs.splice(i, 1); continue; }
+    const ox = Math.round(o.x + (to.x - o.x) * p), oy = Math.round(o.y + (to.y - 14 - o.y) * p - Math.sin(Math.PI * p) * 30);
+    disc(g, '#7a4fd0', ox, oy, 4); disc(g, '#b58cff', ox - 1, oy - 1, 2); PX(g, '#ffffff', ox - 2, oy - 2, 1, 1);
+    if (Math.random() < 0.6) burst(ox, oy, ['#b58cff', '#e8dcff'], 1, 24, { g: 0, life: 0.3, size: 1 });
   }
   RACE.rains = RACE.rains.filter(rn => t < rn.t0 + rn.dur);
-  for (const p of PARTS) { g.globalAlpha = 1 - p.t / p.life; g.fillStyle = p.col; g.fillRect(Math.round(p.x), Math.round(p.y), p.s, p.s); }
-  g.globalAlpha = 1;
+  drawAmbient(g);
+  drawParts(g);
   g.setTransform(1, 0, 0, 1, 0, 0);
 }
 
-/* crisp overlay: name tags, progress bar, off-screen markers */
-function renderOverlay() {
+/* ---------- crisp overlay: name tags, progress bar, markers, flashes ---------- */
+let VIG = null;
+function vignette() {
+  if (VIG && VIG.width === ov.width && VIG.height === ov.height) return VIG;
+  VIG = mk(ov.width, ov.height); const q = VIG.getContext('2d'), W = ov.width, H = ov.height;
+  const gr = q.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.45, W / 2, H / 2, Math.hypot(W, H) * 0.56);
+  gr.addColorStop(0, 'rgba(14,8,30,0)'); gr.addColorStop(1, 'rgba(14,8,30,.42)'); q.fillStyle = gr; q.fillRect(0, 0, W, H);
+  return VIG;
+}
+function pill(x, y, w, h, col) { og.fillStyle = col; const r = h / 2; og.beginPath(); og.moveTo(x + r, y); og.arcTo(x + w, y, x + w, y + h, r); og.arcTo(x + w, y + h, x, y + h, r); og.arcTo(x, y + h, x, y, r); og.arcTo(x, y, x + w, y, r); og.fill(); }
+function renderOverlay(now) {
   og.setTransform(1, 0, 0, 1, 0, 0);
   og.clearRect(0, 0, ov.width, ov.height);
-  if (!RACE.on || RACE.demo) return;
-  const S = ov.width / VW, lv = RACE.lv, me = RACE.me;
+  if (!RACE.on) return;
+  og.drawImage(vignette(), 0, 0);
+  if (RACE.lv.theme === 'kraithong') { og.globalAlpha = 0.5; og.drawImage(vignette(), 0, 0); og.globalAlpha = 1; }
+  if (RACE.demo) return;
+  const S = ov.width / VW, lv = RACE.lv, me = RACE.me, D = DPR;
+  if (FLASH.v > 0.01) { og.fillStyle = `rgba(${FLASH.col},${FLASH.v * 0.7})`; og.fillRect(0, 0, ov.width, ov.height); }
+  /* speed lines while boosting */
+  if (me && me.boostT > 0 && !me.dead) {
+    og.strokeStyle = 'rgba(255,255,255,.5)'; og.lineWidth = 2 * D; og.beginPath();
+    for (let i = 0; i < 14; i++) { const y = ((i * 97 + Math.floor(now / 50) * 53) % 100) / 100 * ov.height, len = (40 + (i * 37) % 80) * D, x = i % 2 ? ov.width - len - ((now / 3 + i * 40) % 60) * D : ((now / 3 + i * 40) % 60) * D; og.moveTo(x, y); og.lineTo(x + len, y); }
+    og.stroke();
+  }
   og.textAlign = 'center'; og.textBaseline = 'middle';
-  og.font = `600 ${Math.round(11 * DPR)}px Kanit, system-ui, sans-serif`;
+  og.font = `600 ${Math.round(11 * D)}px Kanit, system-ui, sans-serif`;
+  const order = ranking();
   for (const r of RACE.runners) {
     if (r === me || r.dead) continue;
-    const sx = (r.x - CAM.x) * S, sy = (r.y - CAM.y - 30) * S;
-    if (sx < -20 || sx > ov.width + 20) continue;
-    const w = og.measureText(r.name).width + 10 * DPR;
-    og.fillStyle = r.bot ? 'rgba(27,20,48,.7)' : 'rgba(63,127,216,.85)';
-    og.fillRect(sx - w / 2, sy - 8 * DPR, w, 16 * DPR);
-    og.fillStyle = '#fff8e8'; og.fillText(r.name, sx, sy);
+    const sx = (r.x - CAM.x) * S, sy = (r.y - CAM.y - 31) * S;
+    if (sx < -30 || sx > ov.width + 30) continue;
+    const label = (order.indexOf(r) + 1) + ' ' + r.name, w = og.measureText(label).width + 12 * D;
+    pill(sx - w / 2, sy - 8 * D, w, 16 * D, r.bot ? 'rgba(27,20,48,.72)' : 'rgba(47,110,200,.9)');
+    og.fillStyle = '#fff8e8'; og.fillText(label, sx, sy + D * 0.5);
   }
-  /* progress bar */
-  const bw = Math.min(ov.width * 0.46, 480 * DPR), bx = (ov.width - bw) / 2, by = 22 * DPR;
-  og.fillStyle = 'rgba(27,20,48,.8)'; og.fillRect(bx - 8 * DPR, by - 6 * DPR, bw + 16 * DPR, 12 * DPR);
-  og.fillStyle = '#4a3f78'; og.fillRect(bx, by - 2 * DPR, bw, 4 * DPR);
-  for (let i = 0; i < 6; i++) { og.fillStyle = i % 2 ? '#1d1410' : '#ffffff'; og.fillRect(bx + bw - 2 * DPR, by - 6 * DPR + i * 2 * DPR, 4 * DPR, 2 * DPR); }
-  const span = lv.finishX - lv.startX;
-  const order = RACE.runners.slice().sort((a, b) => (a === me) - (b === me));
-  for (const r of order) {
-    const f = clamp((r.fin ? span : r.x - lv.startX) / span, 0, 1);
-    const head = runnerSprites(r.look).head, hs = (r === me ? 22 : 16) * DPR;
-    const hx = bx + f * bw - hs / 2, hy = by - hs / 2 + (r === me ? 0 : 1);
-    og.imageSmoothingEnabled = false;
-    if (r === me) { og.fillStyle = '#ffd34d'; og.fillRect(hx - 2 * DPR, hy - 2 * DPR, hs + 4 * DPR, hs + 4 * DPR); }
-    og.drawImage(head, hx, hy, hs, hs);
+  /* progress along the course */
+  const bw = Math.min(ov.width * 0.44, 460 * D), bx = (ov.width - bw) / 2, by = 24 * D, span = lv.finishX - lv.startX;
+  pill(bx - 12 * D, by - 8 * D, bw + 24 * D, 16 * D, 'rgba(27,20,48,.82)');
+  pill(bx, by - 2.5 * D, bw, 5 * D, '#3a2f66');
+  if (me) pill(bx, by - 2.5 * D, Math.max(5 * D, clamp((me.x - lv.startX) / span, 0, 1) * bw), 5 * D, '#ffd34d');
+  for (let i = 1; i < lv.cps.length; i++) { const fx = bx + clamp((lv.cps[i].x - lv.startX) / span, 0, 1) * bw; og.fillStyle = me && me.cp >= i ? '#ffd34d' : '#e0503f'; og.fillRect(fx - D, by - 7 * D, 2 * D, 6 * D); og.beginPath(); og.moveTo(fx + D, by - 7 * D); og.lineTo(fx + 6 * D, by - 5 * D); og.lineTo(fx + D, by - 3 * D); og.fill(); }
+  for (let i = 0; i < 6; i++) for (let j = 0; j < 2; j++) { og.fillStyle = (i + j) % 2 ? '#1d1410' : '#ffffff'; og.fillRect(bx + bw - 2 * D + j * 2 * D, by - 6 * D + i * 2 * D, 2 * D, 2 * D); }
+  og.imageSmoothingEnabled = false;
+  for (const r of RACE.runners.slice().sort((a, b) => (a === me) - (b === me))) {
+    const f = clamp((r.fin ? span : r.x - lv.startX) / span, 0, 1), hs = (r === me ? 22 : 15) * D, hx = bx + f * bw - hs / 2, hy = by - hs / 2;
+    if (r === me) { og.fillStyle = '#ffd34d'; og.fillRect(hx - 2 * D, hy - 2 * D, hs + 4 * D, hs + 4 * D); og.fillStyle = '#1b1430'; og.fillRect(hx - D, hy - D, hs + 2 * D, hs + 2 * D); }
+    og.drawImage(runnerSprites(r.look).head, hx, hy, hs, hs);
   }
   /* runners just off screen */
   for (const r of RACE.runners) {
-    if (r === me || r.dead || r.fin) continue;
+    if (r === me || r.dead || r.fin || !me) continue;
     const sx = (r.x - CAM.x) * S;
     if (sx > -4 && sx < ov.width + 4) continue;
     if (Math.abs(r.x - me.x) > 700) continue;
-    const left = sx < 0, ex = left ? 18 * DPR : ov.width - 18 * DPR;
-    const ey = clamp((r.y - CAM.y - 12) * S, 60 * DPR, ov.height - 60 * DPR);
-    og.fillStyle = 'rgba(27,20,48,.75)'; og.beginPath(); og.arc(ex, ey, 14 * DPR, 0, 7); og.fill();
-    og.drawImage(runnerSprites(r.look).head, ex - 9 * DPR, ey - 9 * DPR, 18 * DPR, 18 * DPR);
-    og.fillStyle = '#ffd34d'; og.beginPath();
-    const d = left ? -1 : 1;
-    og.moveTo(ex + d * 20 * DPR, ey); og.lineTo(ex + d * 14 * DPR, ey - 5 * DPR); og.lineTo(ex + d * 14 * DPR, ey + 5 * DPR); og.fill();
+    const left = sx < 0, ex = left ? 20 * D : ov.width - 20 * D, ey = clamp((r.y - CAM.y - 12) * S, 70 * D, ov.height - 70 * D), d = left ? -1 : 1;
+    og.fillStyle = 'rgba(27,20,48,.8)'; og.beginPath(); og.arc(ex, ey, 15 * D, 0, 7); og.fill();
+    og.strokeStyle = left ? '#ff8a70' : '#ffd34d'; og.lineWidth = 2 * D; og.beginPath(); og.arc(ex, ey, 15 * D, 0, 7); og.stroke();
+    og.drawImage(runnerSprites(r.look).head, ex - 10 * D, ey - 10 * D, 20 * D, 20 * D);
+    og.fillStyle = left ? '#ff8a70' : '#ffd34d'; og.beginPath(); og.moveTo(ex + d * 23 * D, ey); og.lineTo(ex + d * 17 * D, ey - 5 * D); og.lineTo(ex + d * 17 * D, ey + 5 * D); og.fill();
+    og.fillStyle = '#fff8e8'; og.font = `600 ${Math.round(10 * D)}px Kanit, system-ui, sans-serif`; og.fillText(Math.round(Math.abs(r.x - me.x) / 16) + 'm', ex, ey + 24 * D); og.font = `600 ${Math.round(11 * D)}px Kanit, system-ui, sans-serif`;
   }
 }
 
 /* ---------- HUD ---------- */
 const ICON_URL = {};
 const iconUrl = k => ICON_URL[k] || (ICON_URL[k] = itemIcon(k).toDataURL());
-let hudItem = '#', hudRank = '', hudTime = '';
-function updateHud() {
+const HUD = { item: '#', rank: '', time: '', spinUntil: 0, spinShown: '', rankAt: -1, rankT: 0, end: '' };
+function updateHud(now) {
   const me = RACE.me;
   if (!me) return;
   const order = ranking(), k = order.indexOf(me);
-  const rank = (LANG === 'th' ? t('rank')[k] : t('rank')[k]) + '|' + order.length;
-  if (rank !== hudRank) { hudRank = rank; $('hRank').innerHTML = esc(t('rank')[k]) + '<small>/' + order.length + '</small>'; }
-  const time = fmtTime(Math.max(0, me.fin ? me.finT : RACE.simT));
-  if (time !== hudTime) { hudTime = time; $('hTime').textContent = '⏱ ' + time; }
-  const it = me.item || '';
-  if (it !== hudItem) {
-    hudItem = it;
-    $('itemSlot').innerHTML = it ? `<img src="${iconUrl(it)}" alt="">` : '';
-    $('itemSlot').classList.toggle('has', !!it);
-    $('itemName').textContent = it ? L10(ITEMS[it].name) : '';
-    $('tItem').innerHTML = it ? `<img src="${iconUrl(it)}" alt="">` : '?';
+  const rank = t('rank')[k] + '|' + order.length;
+  if (rank !== HUD.rank) { HUD.rank = rank; $('hRank').innerHTML = esc(t('rank')[k]) + '<small>/' + order.length + '</small>'; }
+  /* overtakes */
+  if (RACE.simT > 1.5 && !me.fin && !me.dead) {
+    if (HUD.rankAt >= 0 && k !== HUD.rankAt && now - HUD.rankT > 500) {
+      const up = k < HUD.rankAt, el = $('rankPop');
+      el.textContent = (up ? '▲ ' : '▼ ') + t('rank')[k]; el.className = up ? 'up' : 'down'; void el.offsetWidth; el.classList.add('go');
+      const hr = $('hRank'); hr.classList.remove('bump'); void hr.offsetWidth; hr.classList.add('bump');
+      sfx(up ? 'pass' : 'passed'); HUD.rankT = now;
+    }
+    if (now - HUD.rankT > 500 || HUD.rankAt < 0) HUD.rankAt = k;
   }
+  const time = fmtTime(Math.max(0, me.fin ? me.finT : RACE.simT));
+  if (time !== HUD.time) { HUD.time = time; $('hTime').textContent = time; }
+  /* item slot, with a quick roulette when a box is opened */
+  const it = me.item || '', spinning = it && now < HUD.spinUntil;
+  const show = spinning ? ITEM_KEYS[Math.floor(now / 70) % ITEM_KEYS.length] : it;
+  if (show !== HUD.spinShown || it !== HUD.item) {
+    if (spinning && show !== HUD.spinShown) sfx('tick');
+    if (!spinning && it && HUD.spinShown !== it && HUD.item === it) { sfx('box'); toast(L10(ITEMS[it].name), 1100); }
+    HUD.spinShown = show; HUD.item = it;
+    const img = show ? `<img src="${iconUrl(show)}" alt="">` : '';
+    $('itemSlot').innerHTML = img + (show ? `<kbd>E</kbd>` : '');
+    $('itemSlot').classList.toggle('has', !!it && !spinning); $('itemSlot').classList.toggle('spin', !!spinning);
+    $('itemName').textContent = it && !spinning ? L10(ITEMS[it].name) : '';
+    $('tItem').innerHTML = show ? img : '<span>?</span>';
+  }
+  /* the race closes a while after the first finisher */
+  let end = '';
+  if (me.fin) end = t('spectate');
+  else if (RACE.firstFinishAt != null) end = t('ends_in', Math.max(0, Math.ceil(25 - (RACE.simT - RACE.firstFinishAt))));
+  else if (RACE.mode === 'online' && RACE.runners.some(r => r.fin)) end = t('hurry');
+  if (end !== HUD.end) { HUD.end = end; $('endNote').textContent = end; $('endNote').classList.toggle('on', !!end); }
 }
 
 let lastCount = 99, introHidden = false;
@@ -324,15 +330,17 @@ function frame(now) {
   if (RACE.on) {
     if (!paused) updateRace(IN);
     else { IN.jumpQueued = false; IN.itemQueued = false; }
-    for (const r of RACE.runners) handleFx(r);
-    stepParts(dt);
+    for (const r of RACE.runners) handleFx(r, now);
+    if (!paused) { watchHazards(RACE.lv, RACE.simT); stepAmbient(dt, RACE.lv, RACE.simT); stepParts(dt); }
     updateCamera(dt);
-    render(now);
-    renderOverlay();
-    if (!RACE.demo) { updateHud(); updateCountdown(); netTick(); }
-    musicTick(RACE.lv.theme, !RACE.demo && RACE.simT > -3.5);
+    render(now, paused ? 0 : dt);
+    renderOverlay(now);
+    if (!RACE.demo) { updateHud(now); updateCountdown(); netTick(); }
+    const me = RACE.me, rush = !RACE.demo && me && !me.fin && me.x > RACE.lv.startX + (RACE.lv.finishX - RACE.lv.startX) * 0.8;
+    musicTick(RACE.lv.theme, !RACE.demo && RACE.simT > -3.5, rush);
   }
   if (SCREEN === 'title') drawPreview(now);
+  if (SCREEN === 'results') drawPodium(now);
   requestAnimationFrame(frame);
 }
 
@@ -352,20 +360,21 @@ function startDemo(level) {
   document.body.classList.remove('racing');
   startRace(level % LEVELS.length, botEntries(6, -1, 2), 'solo');
   RACE.demo = true;
-  CAM.snap = true;
+  CAM.snap = true; PARTS.length = 0;
 }
 
 function enterRaceUI() {
   RACE.demo = false; paused = false; CAM.snap = true;
-  lastCount = 99; introHidden = false; hudItem = '#'; hudRank = ''; hudTime = '';
-  PARTS.length = 0;
+  lastCount = 99; introHidden = false;
+  Object.assign(HUD, { item: '#', rank: '', time: '', spinUntil: 0, spinShown: '', rankAt: -1, rankT: 0, end: '#' });
+  PARTS.length = 0; SHAKE.v = 0; FLASH.v = 0; IN.rightAt = -99;
   UI.innerHTML = ''; SCREEN = 'race';
-  document.body.classList.add('racing');
+  document.body.classList.add('racing'); document.body.classList.remove('menu');
   setBig('', false);
-  const th = THEMES[RACE.lv.theme];
-  $('intro').innerHTML = `<h2>${esc(L10(th.name))}</h2><p>${esc(L10(th.story))}</p>`;
+  const th = THEMES[RACE.lv.theme], touch = document.body.classList.contains('touch');
+  $('intro').innerHTML = `<h2>${esc(L10(th.name))}</h2><p>${esc(L10(th.story))}</p><p class="keys">${esc(t(touch ? 'hint_touch' : 'hint_keys'))}</p>`;
   $('intro').classList.remove('off');
-  if (document.body.classList.contains('touch') && innerHeight > innerWidth) setTimeout(() => toast(t('rotate'), 2600), 600);
+  if (touch && innerHeight > innerWidth) setTimeout(() => toast(t('rotate'), 2600), 600);
 }
 
 function startSolo(level) {
@@ -383,19 +392,21 @@ function togglePause() {
 }
 function resumeRace() {
   if (paused && RACE.mode === 'solo') RACE.t0 += performance.now() - pauseAt;
-  paused = false; UI.innerHTML = ''; SCREEN = 'race';
+  paused = false; UI.innerHTML = ''; SCREEN = 'race'; document.body.classList.remove('menu');
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden && RACE.on && !RACE.demo && RACE.mode === 'solo' && SCREEN === 'race') togglePause(); });
 
 function onRaceEnded(list) {
   if (RACE.demo) { const next = (RACE.levelIdx + 1) % LEVELS.length; setTimeout(() => { if (RACE.demo) startDemo(next); }, 1200); return; }
-  const me = RACE.me, mine = list.find(e => e.id === me.id);
-  let newBest = false;
+  const me = RACE.me, mine = list.find(e => e.id === me.id), id = LEVELS[RACE.levelIdx].id;
+  const info = { newBest: false, medal: 0, newMedal: false, place: list.findIndex(e => e.id === me.id) };
   if (mine && mine.fin) {
-    const id = LEVELS[RACE.levelIdx].id;
-    if (!BEST[id] || mine.time < BEST[id]) { BEST[id] = mine.time; saveBest(); newBest = true; }
+    const before = medalFor(id, BEST[id]);
+    info.medal = medalFor(id, mine.time);
+    if (!BEST[id] || mine.time < BEST[id]) { BEST[id] = mine.time; saveBest(); info.newBest = true; }
+    info.newMedal = info.medal > before;
   }
-  setTimeout(() => { if (RACE.on && RACE.ended && !RACE.demo) show('results', list, newBest); }, 1300);
+  setTimeout(() => { if (RACE.on && RACE.ended && !RACE.demo) { show('results', list, info); sfx(info.newMedal ? 'medal' : info.place === 0 ? 'cheer' : info.place > 2 ? 'lose' : 'checkpoint'); } }, 1300);
 }
 
 /* online callbacks from net.js */
@@ -403,14 +414,14 @@ function onLobby() { if (SCREEN === 'lobby') show('lobby'); }
 function onNetRaceStart() { enterRaceUI(); }
 function onToLobby() { RACE.on = false; leaveRaceUI(); startDemo(NET.lobby ? NET.lobby.level : 0); show('lobby'); }
 function onHostLeft() { leaveRaceUI(); startDemo(0); show('title'); setTimeout(() => toast(t('host_left'), 2500), 50); }
-function leaveRaceUI() { document.body.classList.remove('racing'); setBig('', false); $('intro').classList.add('off'); paused = false; }
+function leaveRaceUI() { document.body.classList.remove('racing'); setBig('', false); $('intro').classList.add('off'); $('endNote').classList.remove('on'); paused = false; }
 
 /* ---------- menus ---------- */
 let SCREEN = 'title';
 const SCREENS = {};
 const ACT = {};
 function show(name, ...args) {
-  SCREEN = name;
+  SCREEN = name; document.body.classList.add('menu');
   UI.innerHTML = SCREENS[name](...args);
   const after = SCREENS[name + 'After'];
   if (after) after(...args);
@@ -423,7 +434,19 @@ UI.addEventListener('click', e => {
 });
 
 const langSeg = () => `<div class="seg" role="group" aria-label="Language"><button data-act="lang" data-arg="th" aria-pressed="${LANG === 'th'}">ไทย</button><button data-act="lang" data-arg="en" aria-pressed="${LANG === 'en'}">EN</button></div>`;
-const soundBtn = () => `<button class="btn alt small" data-act="sound">🔊 ${t('sound')}: ${AUD.sfx ? t('on') : t('off')}</button>`;
+const settingsBlock = () => `<div class="sets">
+    <label class="set"><span>${esc(t('music'))}</span><input type="range" min="0" max="100" step="5" value="${Math.round(AUD.music * 100)}" data-vol="music" aria-label="${esc(t('music'))}"></label>
+    <label class="set"><span>${esc(t('sound'))}</span><input type="range" min="0" max="100" step="5" value="${Math.round(AUD.sfx * 100)}" data-vol="sfx" aria-label="${esc(t('sound'))}"></label>
+    <div class="set"><span>${esc(t('shake'))}</span><div class="seg"><button data-act="shake" data-arg="1" aria-pressed="${!!SET.shake}">${esc(t('on'))}</button><button data-act="shake" data-arg="0" aria-pressed="${!SET.shake}">${esc(t('off'))}</button></div></div>
+    <div class="set"><span>${esc(t('language'))}</span>${langSeg()}</div>
+    ${document.documentElement.requestFullscreen ? `<div class="set"><span>${esc(t('fullscreen'))}</span><button class="btn alt small" data-act="full">${esc(t(document.fullscreenElement ? 'off' : 'on'))}</button></div>` : ''}
+  </div>`;
+function bindSettings() {
+  UI.querySelectorAll('[data-vol]').forEach(el => el.addEventListener('input', () => {
+    ensureAudio(); AUD[el.dataset.vol] = +el.value / 100; applyVolume(); saveAudio();
+    if (el.dataset.vol === 'sfx') sfx('pass');
+  }));
+}
 
 SCREENS.title = () => {
   const r = RUNNERS[PROFILE.r], look = myLook();
@@ -433,18 +456,18 @@ SCREENS.title = () => {
     <div class="menu-grid">
       <div class="chooser">
         <div class="arrows"><button data-act="rprev" aria-label="Previous runner">‹</button><div class="who">${esc(L10(r.name))}</div><button data-act="rnext" aria-label="Next runner">›</button></div>
-        <canvas id="prev" width="20" height="28" style="width:80px;height:112px"></canvas>
+        <canvas id="prev" width="44" height="34"></canvas>
         <div class="sw" aria-label="${esc(t('shirt'))}">${SHIRTS.map((c, i) => `<button data-act="shirt" data-arg="${i}" style="background:${c}" aria-pressed="${look.shirt === c}" aria-label="${esc(t('shirt'))} ${i + 1}"></button>`).join('')}</div>
         <div class="sw" aria-label="${esc(t('hair'))}">${HAIRS.map((c, i) => `<button data-act="hair" data-arg="${i}" style="background:${c}" aria-pressed="${look.hair === c}" aria-label="${esc(t('hair'))} ${i + 1}"></button>`).join('')}</div>
         <label class="lbl" for="nameIn">${esc(t('name'))}</label>
         <input class="txt" id="nameIn" maxlength="14" value="${esc(PROFILE.name || '')}" placeholder="${esc(L10(r.name))}" autocomplete="off">
       </div>
       <div class="stack">
-        <button class="btn" data-act="solo">🏃 ${esc(t('play_bots'))}</button>
-        <button class="btn alt" data-act="host">🏠 ${esc(t('host'))}</button>
-        <button class="btn alt" data-act="joinScreen">🔑 ${esc(t('join'))}</button>
-        <button class="btn alt" data-act="how">❓ ${esc(t('how'))}</button>
-        <div class="foot">${langSeg()}${soundBtn()}</div>
+        <button class="btn" data-act="solo">${esc(t('play_bots'))} ▶</button>
+        <button class="btn alt" data-act="host">${esc(t('host'))}</button>
+        <button class="btn alt" data-act="joinScreen">${esc(t('join'))}</button>
+        <div class="row2"><button class="btn alt" data-act="how">${esc(t('how'))}</button><button class="btn alt" data-act="settings">${esc(t('settings'))}</button></div>
+        <div class="foot">${langSeg()}<span class="ver">v2.0</span></div>
       </div>
     </div>
   </div>`;
@@ -456,18 +479,26 @@ SCREENS.titleAfter = () => {
 function drawPreview(now) {
   const c = $('prev');
   if (!c) return;
-  const pg = c.getContext('2d'), S = runnerSprites(myLook());
+  const pg = c.getContext('2d'), S = runnerSprites(myLook()), th = THEMES[RACE.lv ? RACE.lv.theme : 'sangthong'];
   pg.clearRect(0, 0, c.width, c.height);
-  pg.drawImage(S.run[Math.floor(now / 90) % 6][0], 1, 1);
+  pg.fillStyle = 'rgba(12,8,28,.35)'; pg.fillRect(15, 30, 14, 2); pg.fillRect(16, 32, 12, 1);
+  pg.fillStyle = th.top; pg.fillRect(0, 31, 44, 1); pg.fillStyle = th.top2; pg.fillRect(0, 32, 44, 2);
+  for (let i = 0; i < 6; i++) { pg.fillStyle = 'rgba(255,255,255,.35)'; pg.fillRect(44 - ((now / 12 + i * 9) % 50), 28 - (i % 3), 3, 1); }
+  pg.drawImage(S.run[Math.floor(now / 75) % 8][0], 13, 5);
 }
+
+SCREENS.settings = () => `<div class="card narrow"><h2 class="t">${esc(t('settings'))}</h2>${settingsBlock()}<div class="foot"><button class="btn" data-act="title">${esc(t('back'))}</button></div></div>`;
+SCREENS.settingsAfter = bindSettings;
 
 SCREENS.levels = () => `<div class="card">
   <h2 class="t">${esc(t('pick_level'))}</h2>
-  <div class="levels">${LEVELS.map((L, i) => `<button class="lvl" data-act="pickLevel" data-arg="${i}" aria-pressed="${SOLO.level === i}">
+  <div class="levels">${LEVELS.map((L, i) => { const m = medalFor(L.id, BEST[L.id]), p = PAR[L.id]; return `<button class="lvl" data-act="pickLevel" data-arg="${i}" aria-pressed="${SOLO.level === i}">
       <canvas width="160" height="80" data-thumb="${i}"></canvas>
-      <div><b>${i + 1}. ${esc(L10(THEMES[L.theme].name))}</b><small>${esc(t('best'))}: ${BEST[L.id] ? fmtTime(BEST[L.id]) : t('none')}</small></div>
-    </button>`).join('')}</div>
-  <div class="row" style="margin-top:14px">
+      <div><b>${i + 1}. ${esc(L10(THEMES[L.theme].name))}</b>
+      <small>${medalDot(m)}${esc(t('best'))}: ${BEST[L.id] ? fmtTime(BEST[L.id]) : t('none')}${m < 3 ? ` · ${esc(t('next_medal'))} ${fmtTime(p[2 - m])}` : ''}</small></div>
+    </button>`; }).join('')}</div>
+  <p class="note story">${esc(L10(THEMES[LEVELS[SOLO.level].theme].story))}</p>
+  <div class="row" style="margin-top:12px">
     <span>${esc(t('bots'))}</span>
     <div class="seg">${['easy', 'normal', 'hard'].map((k, i) => `<button data-act="skill" data-arg="${i}" aria-pressed="${SOLO.skill === i}">${esc(t(k))}</button>`).join('')}</div>
     <span class="grow"></span>
@@ -477,28 +508,26 @@ SCREENS.levels = () => `<div class="card">
 </div>`;
 SCREENS.levelsAfter = () => document.querySelectorAll('[data-thumb]').forEach(c => drawThumb(c, +c.dataset.thumb));
 
-const THUMB_LV = {};
+const THUMB = {};
 function drawThumb(c, i) {
-  const tg = c.getContext('2d'), L = LEVELS[i], th = THEMES[L.theme];
+  const tg = c.getContext('2d'), L = LEVELS[i];
   tg.imageSmoothingEnabled = false;
-  const grd = tg.createLinearGradient(0, 0, 0, 80); grd.addColorStop(0, th.sky[0]); grd.addColorStop(1, th.sky[1]);
-  tg.fillStyle = grd; tg.fillRect(0, 0, 160, 80);
-  backdrop(L.theme).forEach((layer, k) => tg.drawImage(layer, k * 40, 0, 320, VH, 0, -10, 160, VH / 2));
-  const lv = THUMB_LV[i] || (THUMB_LV[i] = buildLevel(i));
-  const S = tileSet(th), sx = [264, 44, 120, 68][i];
-  for (let y = 6; y < ROWS; y++) for (let x = 0; x < 20; x++) {
-    const ct = tileAt(lv, sx + x, y), px = x * 8, py = (y - 8) * 8;
-    if (isSolidT(ct)) tg.drawImage(!isSolidT(tileAt(lv, sx + x, y - 1)) ? S.top[0] : S.soil[0], px, py, 8, 8);
-    else if (ct === T.ONEWAY) tg.drawImage(S.plank, px, py, 8, 8);
-    else if (ct === T.WATER) { tg.fillStyle = th.water; tg.fillRect(px, py, 8, 8); }
+  if (!THUMB[i]) {
+    const lv = buildLevel(i), sx = [264, 44, 120, 68][i], art = buildLevelArt(lv, sx, sx + 20);
+    const full = mk(320, 160), fgx = full.getContext('2d');
+    fgx.drawImage(skyCanvas(L.theme, 320), 0, -40);
+    for (const B of backdrop(L.theme)) fgx.drawImage(B.c, Math.round(-60 * B.f * 4) % BD_W, -72);
+    fgx.drawImage(art.art, 0, -(lv.pxH - 160 - 22)); fgx.drawImage(art.fore, 0, -(lv.pxH - 160 - 22));
+    for (const b of lv.boxes) if (b.x / TILE >= sx && b.x / TILE < sx + 20) drawBox(fgx, { id: 0, x: b.x - sx * TILE, y: b.y - (lv.pxH - 160 - 22) }, 0, true);
+    fgx.drawImage(runnerSprites(makeLook(i + 1)).run[1][0], 40, lv.startY - (lv.pxH - 160 - 22) - 25);
+    THUMB[i] = full;
   }
-  for (const b of lv.boxes) if (b.x / TILE >= sx && b.x / TILE < sx + 20) drawBox(tg, { id: 0, x: (b.x / TILE - sx) * 8, y: (b.y / TILE - 8) * 8 }, 0, true);
-  tg.drawImage(runnerSprites(makeLook(i + 1)).run[1][0], 18, (lv.startY / TILE - 8) * 8 - 26, 18, 26);
+  tg.drawImage(THUMB[i], 0, 0, 320, 160, 0, 0, 160, 80);
 }
 
 SCREENS.how = () => `<div class="card how">
   <h2 class="t">${esc(t('how_title'))}</h2>
-  <p>${esc(t('how_keys'))}</p><p>${esc(t('how_touch'))}</p><p>${esc(t('how_tips'))}</p>
+  <p>${esc(t('how_keys'))}</p><p>${esc(t('how_touch'))}</p><p>${esc(t('how_tips'))}</p><p>${esc(t('how_tips2'))}</p>
   <h2 class="t" style="font-size:20px;margin-top:14px">${esc(t('items_title'))}</h2>
   <div class="items">${ITEM_KEYS.map(k => `<div><img src="${iconUrl(k)}" alt=""><span><b>${esc(L10(ITEMS[k].name))}</b><small>${esc(L10(ITEMS[k].desc))}</small></span></div>`).join('')}</div>
   <div class="foot"><button class="btn" data-act="title">${esc(t('back'))}</button></div>
@@ -541,10 +570,11 @@ SCREENS.lobby = () => {
     : `<p class="note">${esc(t('waiting'))}</p><div class="foot"><button class="btn alt" data-act="leave">${esc(t('leave'))}</button></div>`}
   </div>`;
 };
+const drawHeads = () => document.querySelectorAll('[data-head]').forEach(c => {
+  try { const cg = c.getContext('2d'); cg.imageSmoothingEnabled = false; cg.drawImage(runnerSprites(sanitizeLook(JSON.parse(c.dataset.head))).head, -1, -1); } catch (e) { /* ignore */ }
+});
 SCREENS.lobbyAfter = () => {
-  document.querySelectorAll('[data-head]').forEach(c => {
-    try { const cg = c.getContext('2d'); cg.imageSmoothingEnabled = false; cg.drawImage(runnerSprites(sanitizeLook(JSON.parse(c.dataset.head))).head, -1, -1); } catch (e) { /* ignore */ }
-  });
+  drawHeads();
   const f = $('fillIn');
   if (f) f.addEventListener('change', () => hostSetOption('fill', f.checked));
 };
@@ -557,28 +587,60 @@ SCREENS.pause = () => `<div class="card narrow">
     ${RACE.mode === 'solo' ? `<button class="btn alt" data-act="restart">⟲ ${esc(t('restart'))}</button>` : ''}
     <button class="btn red" data-act="quit">✕ ${esc(t('quit'))}</button>
   </div>
-  <div class="foot">${langSeg()}${soundBtn()}</div>
+  ${settingsBlock()}
 </div>`;
+SCREENS.pauseAfter = bindSettings;
 
-SCREENS.results = (list, newBest) => {
-  const me = RACE.me;
+/* results: a podium for the top three, then everyone's times */
+let PODIUM = null;
+const DIGITS = { 1: ['010', '110', '010', '010', '111'], 2: ['111', '001', '111', '100', '111'], 3: ['111', '001', '011', '001', '111'] };
+SCREENS.results = (list, info = {}) => {
+  const me = RACE.me, first = list[0] && list[0].time;
+  PODIUM = { list: list.slice(0, 3), t0: performance.now(), theme: RACE.lv.theme, meId: me.id };
   const rows = list.map((e, i) => `<tr class="${e.id === me.id ? 'me' : ''}"><td class="pos">${esc(t('rank')[i] || i + 1)}</td>
       <td><canvas width="12" height="12" data-head='${esc(JSON.stringify(e.look))}'></canvas> ${esc(e.name)} ${e.bot ? `<span class="pill">${esc(t('bot_tag'))}</span>` : ''}</td>
-      <td class="tm">${fmtTime(e.time)}</td></tr>`).join('');
+      <td class="tm">${fmtTime(e.time)}${i > 0 && e.time != null && first != null ? `<small>+${(e.time - first).toFixed(2)}</small>` : ''}</td></tr>`).join('');
   let buttons;
   if (RACE.mode === 'solo') buttons = `<button class="btn alt" data-act="title">${esc(t('menu'))}</button><button class="btn alt" data-act="restart">${esc(t('again'))}</button><button class="btn" data-act="nextLevel">${esc(t('next'))} ▶</button>`;
   else if (NET.isHost) buttons = `<button class="btn alt" data-act="leave">${esc(t('leave'))}</button><button class="btn" data-act="toLobby">${esc(t('again'))} ▶</button>`;
   else buttons = `<button class="btn alt" data-act="leave">${esc(t('leave'))}</button>`;
-  return `<div class="card narrow">
-    <h2 class="t">🏁 ${esc(t('results'))}</h2>
-    <p class="note" style="margin:0 0 6px">${esc(L10(THEMES[RACE.lv.theme].name))}</p>
+  const id = LEVELS[RACE.levelIdx].id, p = PAR[id];
+  const badge = info.medal ? `<p class="status">${medalDot(info.medal, true)} ${esc(t('medal_' + info.medal))}${info.newBest ? ' · ★ ' + esc(t('new_best')) : ''}</p>`
+    : info.newBest ? `<p class="status">★ ${esc(t('new_best'))}</p>` : '';
+  const target = RACE.mode === 'solo' && info.medal < 3 ? `<p class="note">${esc(t('next_medal'))} ${medalDot(info.medal + 1)} ${fmtTime(p[2 - info.medal])}</p>` : '';
+  return `<div class="card narrow results">
+    <h2 class="t">${esc(t('results'))} <small>${esc(L10(THEMES[RACE.lv.theme].name))}</small></h2>
+    <canvas id="podium" width="220" height="92"></canvas>
+    ${badge}
     <table class="res">${rows}</table>
-    ${newBest ? `<p class="status">★ ${esc(t('new_best'))}</p>` : ''}
+    ${target}
     ${RACE.mode === 'online' && !NET.isHost ? `<p class="note">${esc(t('waiting'))}</p>` : ''}
     <div class="foot">${buttons}</div>
   </div>`;
 };
-SCREENS.resultsAfter = SCREENS.lobbyAfter;
+SCREENS.resultsAfter = drawHeads;
+function drawPodium(now) {
+  const c = $('podium');
+  if (!c || !PODIUM) return;
+  const q = c.getContext('2d'), W = c.width, H = c.height, tt = (now - PODIUM.t0) / 1000, th = THEMES[PODIUM.theme];
+  q.imageSmoothingEnabled = false;
+  q.drawImage(skyCanvas(PODIUM.theme, 320), 50, 60, 220, 92, 0, 0, W, H);
+  for (const B of backdrop(PODIUM.theme)) q.drawImage(B.c, 40, 120, 220, 92, 0, 0, W, H);
+  q.fillStyle = th.top2; q.fillRect(0, H - 8, W, 8); q.fillStyle = th.top; q.fillRect(0, H - 8, W, 2);
+  const slots = [[110, 34, 1], [62, 24, 2], [158, 17, 3]];
+  PODIUM.list.forEach((e, i) => {
+    const [x, h, n] = slots[i], rise = Math.min(1, Math.max(0, tt * 2.2 - i * 0.25)), top = H - 8 - Math.round(h * rise);
+    q.fillStyle = '#2a2148'; q.fillRect(x - 21, top, 42, H - 8 - top); q.fillStyle = '#4a3f78'; q.fillRect(x - 21, top, 42, 3); q.fillStyle = '#1b1430'; q.fillRect(x + 17, top + 3, 4, H - 11 - top);
+    q.fillStyle = MEDAL_COL[4 - n]; q.fillRect(x - 5, top + 6, 10, 11); q.fillStyle = 'rgba(255,255,255,.45)'; q.fillRect(x - 5, top + 6, 10, 1); q.fillStyle = '#1b1430';
+    DIGITS[n].forEach((row, j) => { for (let i = 0; i < 3; i++) if (row[i] === '1') q.fillRect(x - 3 + i * 2, top + 7 + j * 2 - (j > 3 ? 1 : 0), 2, j > 3 ? 1 : 2); });
+    const S = runnerSprites(sanitizeLook(e.look)), win = i === 0, hop = win ? Math.round(Math.abs(Math.sin(tt * 5)) * 5) : 0;
+    const fr = win ? S.win[Math.floor(tt * 5) % 2][0] : i === 1 ? S.win[1][0] : S.idle[Math.floor(tt * 2.4) % 4][0];
+    q.fillStyle = 'rgba(12,8,28,.3)'; q.fillRect(x - 6, top - 1, 12, 1);
+    q.drawImage(fr, x - 9, top - 25 - hop);
+    if (e.id === PODIUM.meId) { q.fillStyle = '#ffd34d'; const ay = top - 34 - hop + Math.round(Math.sin(tt * 6)); q.fillRect(x - 3, ay, 6, 2); q.fillRect(x - 2, ay + 2, 4, 1); q.fillRect(x - 1, ay + 3, 2, 1); }
+  });
+  for (let i = 0; i < 26; i++) { const sp = 18 + (i % 5) * 7, x = (i * 53 + Math.sin(tt * 2 + i) * 6) % W, y = ((tt * sp + i * 37) % (H + 10)) - 6; q.fillStyle = ['#ffd34d', '#ff6a50', '#3f7fd8', '#3fae6a', '#ffffff', '#ff8fb8'][i % 6]; q.fillRect(Math.round(x), Math.round(y), Math.sin(tt * 8 + i) > 0 ? 2 : 1, 2); }
+}
 
 /* ---------- menu actions ---------- */
 Object.assign(ACT, {
@@ -587,8 +649,10 @@ Object.assign(ACT, {
   rnext: () => { PROFILE.r = (PROFILE.r + 1) % RUNNERS.length; PROFILE.shirt = null; PROFILE.hair = null; saveProfile(); show('title'); },
   shirt: (b, i) => { PROFILE.shirt = +i; saveProfile(); show('title'); },
   hair: (b, i) => { PROFILE.hair = +i; saveProfile(); show('title'); },
-  lang: (b, l) => { setLang(l); hudRank = ''; hudItem = '#'; if (SCREEN === 'pause') show('pause'); else if (SCREEN === 'lobby') show('lobby'); else show(SCREEN === 'race' ? 'title' : SCREEN in SCREENS ? SCREEN : 'title'); },
-  sound: () => { AUD.sfx = !AUD.sfx; AUD.music = AUD.sfx; saveAudio(); show(SCREEN); },
+  lang: (b, l) => { setLang(l); HUD.rank = ''; HUD.item = '#'; HUD.end = '#'; show(SCREEN in SCREENS && SCREEN !== 'results' && SCREEN !== 'wait' ? SCREEN : 'title'); },
+  shake: (b, v) => { SET.shake = v === '1'; saveSet(); if (SET.shake) { SHAKE.v = 0.6; } show(SCREEN); },
+  full: () => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch (e) { /* not allowed */ } setTimeout(() => { if (SCREEN === 'settings' || SCREEN === 'pause') show(SCREEN); }, 250); },
+  settings: () => show('settings'),
   solo: () => show('levels'),
   pickLevel: (b, i) => { SOLO.level = +i; show('levels'); },
   skill: (b, i) => { SOLO.skill = +i; show('levels'); },

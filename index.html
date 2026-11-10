@@ -25,31 +25,51 @@
   /* ---------- HUD ---------- */
   #hud { position: absolute; inset: 0; pointer-events: none; display: none; }
   body.racing #hud { display: block; }
-  .hud-tl { position: absolute; left: max(12px, env(safe-area-inset-left)); top: max(10px, env(safe-area-inset-top)); line-height: 1; text-shadow: 0 2px 0 #000, 0 0 6px rgba(0,0,0,.6); }
-  #hRank { font-size: 44px; font-weight: 700; color: var(--gold); }
-  #hRank small { font-size: 18px; color: var(--text); margin-left: 4px; }
-  #hTime { font-size: 17px; margin-top: 4px; font-variant-numeric: tabular-nums; }
-  #pauseBtn { position: absolute; right: max(12px, env(safe-area-inset-right)); top: max(10px, env(safe-area-inset-top)); pointer-events: auto; width: 42px; height: 42px; border-radius: 10px; border: 2px solid var(--line); background: var(--panel); font-size: 20px; line-height: 1; }
-  #itemSlot { position: absolute; right: max(64px, calc(env(safe-area-inset-right) + 64px)); top: max(10px, env(safe-area-inset-top)); width: 58px; height: 58px; border-radius: 12px; border: 2px solid var(--line); background: var(--panel); display: grid; place-items: center; pointer-events: auto; }
-  #itemSlot.has { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,211,77,.25); animation: glow 1s infinite alternate; }
-  #itemSlot img { width: 42px; height: 42px; image-rendering: pixelated; }
-  #itemName { position: absolute; right: max(12px, env(safe-area-inset-right)); top: calc(max(10px, env(safe-area-inset-top)) + 64px); font-size: 13px; text-shadow: 0 1px 0 #000; }
-  @keyframes glow { to { box-shadow: 0 0 0 6px rgba(255,211,77,.12); } }
-  #big { position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%); font-size: 88px; font-weight: 700; color: var(--gold); text-shadow: 0 5px 0 #000, 0 0 20px rgba(0,0,0,.5); pointer-events: none; white-space: nowrap; }
-  #big.pop { animation: pop .5s ease-out; }
-  @keyframes pop { from { transform: translate(-50%, -50%) scale(1.6); opacity: 0; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
-  #toast { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); padding: 6px 16px; border-radius: 999px; background: var(--panel); border: 2px solid var(--line); font-size: 16px; opacity: 0; transition: opacity .25s; white-space: nowrap; }
-  #toast.on { opacity: 1; }
-  #intro { position: absolute; left: 50%; top: calc(max(10px, env(safe-area-inset-top)) + 46px); transform: translateX(-50%); width: min(560px, 90vw); text-align: center; padding: 12px 18px; border-radius: 14px; background: var(--panel); border: 2px solid var(--line); transition: opacity .4s; }
+  .hud-tl { position: absolute; left: max(12px, env(safe-area-inset-left)); top: max(8px, env(safe-area-inset-top)); line-height: 1.34; text-shadow: 0 2px 0 #000, 0 0 6px rgba(0,0,0,.6); }
+  #hRank { font-size: 46px; font-weight: 700; color: var(--gold); display: inline-block; transform-origin: left center; -webkit-text-stroke: 1px #7a3a10; paint-order: stroke fill; }
+  #hRank small { font-size: 18px; color: var(--text); margin-left: 4px; -webkit-text-stroke: 0; }
+  #hRank.bump { animation: bump .35s ease-out; }
+  @keyframes bump { 30% { transform: scale(1.28); } }
+  #rankPop { display: inline-block; margin-left: 10px; font-size: 18px; font-weight: 700; opacity: 0; vertical-align: 14px; }
+  #rankPop.up { color: #7dfc9a; } #rankPop.down { color: #ff8a70; }
+  #rankPop.go { animation: rankpop 1.1s ease-out; }
+  @keyframes rankpop { 0% { opacity: 0; transform: translateY(8px); } 15% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-6px); } }
+  #hTime { font-size: 17px; margin-top: -8px; line-height: 1; font-variant-numeric: tabular-nums; padding-left: 2px; }
+  #hTime::before { content: ""; display: inline-block; width: 11px; height: 11px; border: 2px solid currentColor; border-radius: 50%; margin-right: 6px; vertical-align: -1px; box-shadow: inset 2px -2px 0 -1px currentColor; }
+  #pauseBtn { position: absolute; right: max(12px, env(safe-area-inset-right)); top: max(10px, env(safe-area-inset-top)); pointer-events: auto; width: 42px; height: 42px; border-radius: 10px; border: 2px solid var(--line); background: var(--panel); font-size: 0; }
+  #pauseBtn::before, #pauseBtn::after { content: ""; position: absolute; top: 12px; width: 5px; height: 14px; background: var(--text); border-radius: 1px; }
+  #pauseBtn::before { left: 12px; } #pauseBtn::after { right: 12px; }
+  #itemSlot { position: absolute; right: max(64px, calc(env(safe-area-inset-right) + 64px)); top: max(10px, env(safe-area-inset-top)); width: 62px; height: 62px; border-radius: 14px; border: 3px solid var(--line); background: var(--panel); display: grid; place-items: center; pointer-events: auto; padding: 0; }
+  #itemSlot.has { border-color: var(--gold); animation: glow 1s infinite alternate; }
+  #itemSlot.spin { border-color: #fff; }
+  #itemSlot img { width: 48px; height: 48px; image-rendering: pixelated; }
+  #itemSlot kbd { position: absolute; right: -6px; bottom: -6px; font: 700 11px var(--font); background: var(--gold); color: #2a1408; border-radius: 5px; padding: 1px 5px; box-shadow: 0 2px 0 var(--gold-dk); }
+  body.touch #itemSlot kbd { display: none; }
+  #itemName { position: absolute; right: max(12px, env(safe-area-inset-right)); top: calc(max(10px, env(safe-area-inset-top)) + 70px); font-size: 13px; font-weight: 500; text-shadow: 0 1px 0 #000, 0 0 5px rgba(0,0,0,.7); }
+  @keyframes glow { from { box-shadow: 0 0 0 3px rgba(255,211,77,.3); } to { box-shadow: 0 0 0 7px rgba(255,211,77,.1); } }
+  #big { position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%); font-size: 96px; font-weight: 700; color: var(--gold); -webkit-text-stroke: 3px #7a3a10; paint-order: stroke fill; text-shadow: 0 6px 0 #2a1408, 0 0 24px rgba(0,0,0,.5); pointer-events: none; white-space: nowrap; }
+  #big.pop { animation: pop .5s cubic-bezier(.2,1.6,.4,1); }
+  @keyframes pop { from { transform: translate(-50%, -50%) scale(2) rotate(-6deg); opacity: 0; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+  #toast { position: absolute; left: 50%; top: 21%; transform: translateX(-50%) translateY(6px); padding: 6px 18px; border-radius: 999px; background: var(--panel); border: 2px solid var(--gold); font-size: 16px; font-weight: 500; opacity: 0; transition: opacity .2s, transform .2s; white-space: nowrap; }
+  #toast.on { opacity: 1; transform: translateX(-50%); }
+  #endNote { position: absolute; left: 50%; top: calc(max(10px, env(safe-area-inset-top)) + 44px); transform: translateX(-50%); padding: 3px 14px; border-radius: 999px; background: rgba(224,80,63,.92); font-size: 14px; font-weight: 500; opacity: 0; transition: opacity .25s; white-space: nowrap; }
+  #endNote.on { opacity: 1; }
+  #intro { position: absolute; left: 50%; top: calc(max(10px, env(safe-area-inset-top)) + 50px); transform: translateX(-50%); width: min(580px, 90vw); text-align: center; padding: 12px 18px; border-radius: 14px; background: var(--panel); border: 2px solid var(--line); box-shadow: 0 6px 0 rgba(0,0,0,.3); transition: opacity .4s, transform .4s; }
   #intro h2 { margin: 0; font-size: 22px; color: var(--gold); }
   #intro p { margin: 4px 0 0; color: var(--muted); font-size: 15px; }
-  #intro.off { opacity: 0; }
+  #intro p.keys { margin-top: 8px; padding-top: 7px; border-top: 1px dashed var(--line); color: var(--text); font-size: 13.5px; }
+  #intro.off { opacity: 0; transform: translateX(-50%) translateY(-10px); }
 
   /* ---------- touch controls ---------- */
   #touch { position: absolute; inset: 0; pointer-events: none; display: none; }
   body.racing.touch #touch { display: block; }
+  body.menu #touch, body.menu #intro, body.menu #toast, body.menu #big { display: none; }
   .tb { position: absolute; pointer-events: auto; border-radius: 50%; border: 3px solid rgba(255,255,255,.35); background: rgba(27,20,48,.45); display: grid; place-items: center; font-size: 26px; font-weight: 700; color: rgba(255,255,255,.9); touch-action: none; }
-  .tb.on { background: rgba(255,211,77,.45); border-color: var(--gold); }
+  .tb.on { background: rgba(255,211,77,.5); border-color: var(--gold); transform: scale(.94); }
+  .tb i { display: block; width: 0; height: 0; border: 11px solid transparent; }
+  #tLeft i { border-right-color: currentColor; margin-left: -11px; } #tRight i { border-left-color: currentColor; margin-right: -11px; }
+  #tJump i { border-width: 14px; border-bottom-color: currentColor; margin-top: -14px; } #tSlide i { border-top-color: currentColor; margin-bottom: -11px; }
+  #tItem span { font-size: 22px; opacity: .6; }
   #tLeft { left: max(14px, env(safe-area-inset-left)); bottom: max(18px, env(safe-area-inset-bottom)); width: 78px; height: 78px; }
   #tRight { left: calc(max(14px, env(safe-area-inset-left)) + 90px); bottom: max(18px, env(safe-area-inset-bottom)); width: 78px; height: 78px; }
   #tJump { right: max(16px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); width: 92px; height: 92px; font-size: 30px; }
@@ -60,10 +80,13 @@
   /* ---------- menus ---------- */
   #ui { position: absolute; inset: 0; display: grid; place-items: center; padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); overflow-y: auto; }
   #ui:empty { display: none; }
-  .card { width: min(720px, 100%); background: var(--panel); border: 3px solid var(--line); border-radius: 18px; padding: 22px 24px; box-shadow: 0 10px 0 rgba(0,0,0,.35); max-height: calc(100dvh - 24px); overflow-y: auto; touch-action: pan-y; }
+  .card { width: min(720px, 100%); background: var(--panel); border: 3px solid var(--line); border-radius: 18px; padding: 22px 24px; box-shadow: 0 10px 0 rgba(0,0,0,.35), inset 0 0 0 2px rgba(255,255,255,.04); max-height: calc(100dvh - 24px); overflow-y: auto; touch-action: pan-y; animation: cardin .22s ease-out; }
+  @keyframes cardin { from { transform: translateY(10px) scale(.98); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .card, #big.pop, #hRank.bump { animation: none; } }
   .card.narrow { width: min(460px, 100%); }
   .logo { text-align: center; margin: 0 0 4px; }
-  .logo h1 { margin: 0; font-size: clamp(34px, 7vw, 54px); line-height: 1; color: var(--gold); text-shadow: 0 4px 0 #8a3a1a; letter-spacing: .02em; }
+  .logo h1 { margin: 0; font-size: clamp(34px, 7vw, 56px); line-height: 1; color: var(--gold); -webkit-text-stroke: 2px #7a3a10; paint-order: stroke fill; text-shadow: 0 5px 0 #2a1408; letter-spacing: .02em; }
+  .logo::after { content: ""; display: block; width: 150px; height: 6px; margin: 10px auto 0; background: repeating-linear-gradient(90deg, var(--gold) 0 6px, transparent 6px 10px, var(--red) 10px 16px, transparent 16px 20px); border-radius: 3px; opacity: .85; }
   .logo .th { display: block; font-size: clamp(20px, 4vw, 28px); color: var(--text); text-shadow: 0 3px 0 #000; margin-top: 4px; }
   .tag { text-align: center; color: var(--muted); margin: 6px 0 16px; font-size: 15px; }
   h2.t { margin: 0 0 14px; font-size: 26px; color: var(--gold); }
@@ -78,7 +101,18 @@
   .stack { display: grid; gap: 10px; }
   .menu-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 18px; align-items: start; }
   .chooser { background: var(--ink); border: 2px solid var(--line); border-radius: 14px; padding: 12px; text-align: center; }
-  .chooser canvas { width: 96px; height: 144px; image-rendering: pixelated; display: block; margin: 0 auto; }
+  .chooser canvas { width: 176px; height: 136px; image-rendering: pixelated; display: block; margin: 0 auto; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .sets { display: grid; gap: 10px; margin-top: 14px; }
+  .set { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--ink); border-radius: 10px; padding: 8px 12px; font-size: 15px; }
+  .set input[type=range] { flex: 1; max-width: 220px; accent-color: var(--gold); height: 28px; }
+  .medal { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; box-shadow: inset -2px -2px 0 rgba(0,0,0,.25), inset 2px 2px 0 rgba(255,255,255,.4), 0 0 0 2px rgba(0,0,0,.35); }
+  .medal.m1 { background: #c8834a; } .medal.m2 { background: #c9d2dc; } .medal.m3 { background: #ffd34d; }
+  .medal.big { width: 18px; height: 18px; vertical-align: -3px; }
+  .story { text-align: left; margin-top: 10px; min-height: 2.8em; }
+  #podium { width: 100%; aspect-ratio: 220 / 92; image-rendering: pixelated; display: block; border-radius: 12px; border: 2px solid var(--line); margin-bottom: 8px; }
+  .results h2.t small { font-size: 14px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .res .tm small { display: block; color: var(--muted); font-size: 12px; }
   .chooser .who { font-size: 20px; font-weight: 700; margin: 4px 0; }
   .arrows { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .arrows button { width: 40px; height: 40px; border-radius: 10px; border: 2px solid var(--line); background: var(--ink-2); font-size: 20px; }
@@ -94,7 +128,8 @@
   .seg button[aria-pressed="true"] { background: var(--gold); color: #2a1408; }
   .levels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .lvl { text-align: left; padding: 0; border: 3px solid var(--line); border-radius: 14px; background: var(--ink); overflow: hidden; }
-  .lvl[aria-pressed="true"] { border-color: var(--gold); }
+  .lvl[aria-pressed="true"] { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,211,77,.25); }
+  .lvl:hover { border-color: #7a6cc0; } .lvl[aria-pressed="true"]:hover { border-color: var(--gold); }
   .lvl canvas { width: 100%; aspect-ratio: 2 / 1; display: block; image-rendering: pixelated; }
   .lvl div { padding: 8px 10px; }
   .lvl b { display: block; font-size: 15px; line-height: 1.25; }
@@ -112,6 +147,7 @@
   .res canvas { width: 30px; height: 30px; image-rendering: pixelated; vertical-align: middle; }
   .res .tm { text-align: right; font-variant-numeric: tabular-nums; }
   .note { color: var(--muted); font-size: 14px; text-align: center; margin: 8px 0 0; }
+  .ver { color: var(--muted); font-size: 12px; opacity: .7; align-self: center; }
   .status { min-height: 1.4em; text-align: center; color: var(--gold); margin-top: 8px; }
   .how p { margin: 6px 0; color: var(--muted); }
   .items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
@@ -124,6 +160,10 @@
     .levels, .items { grid-template-columns: minmax(0, 1fr); }
     #hRank { font-size: 34px; }
     #big { font-size: 64px; }
+    #itemSlot { width: 52px; height: 52px; } #itemSlot img { width: 40px; height: 40px; }
+    #itemName { top: calc(max(10px, env(safe-area-inset-top)) + 58px); }
+    .chooser canvas { width: 132px; height: 102px; }
+    #intro p.keys { display: none; }
   }
   @media (max-height: 520px) {
     .card { padding: 12px 16px; }
@@ -133,6 +173,9 @@
     .players { margin: 8px 0; gap: 5px; }
     .code-big { font-size: 36px; }
     .foot { margin-top: 8px; }
+    .sets { gap: 6px; margin-top: 8px; } .set { padding: 4px 10px; }
+    #podium { max-height: 30dvh; width: auto; margin-left: auto; margin-right: auto; }
+    .chooser canvas { width: 110px; height: 85px; }
   }
   @media (max-height: 520px) and (min-width: 600px) {
     .menu-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
@@ -146,20 +189,21 @@
 <canvas id="over"></canvas>
 
 <div id="hud">
-  <div class="hud-tl"><div id="hRank"></div><div id="hTime"></div></div>
+  <div class="hud-tl"><div><span id="hRank"></span><span id="rankPop"></span></div><div id="hTime"></div></div>
   <button id="itemSlot" type="button" aria-label="Use item"></button>
   <div id="itemName"></div>
-  <button id="pauseBtn" type="button" aria-label="Pause">❚❚</button>
+  <button id="pauseBtn" type="button" aria-label="Pause"></button>
+  <div id="endNote"></div>
   <div id="big"></div>
   <div id="toast"></div>
   <div id="intro" class="off"></div>
 </div>
 
 <div id="touch">
-  <button class="tb" id="tLeft" type="button" aria-label="Left">◀</button>
-  <button class="tb" id="tRight" type="button" aria-label="Right">▶</button>
-  <button class="tb" id="tSlide" type="button" aria-label="Slide">▼</button>
-  <button class="tb" id="tJump" type="button" aria-label="Jump">▲</button>
+  <button class="tb" id="tLeft" type="button" aria-label="Left"><i></i></button>
+  <button class="tb" id="tRight" type="button" aria-label="Right"><i></i></button>
+  <button class="tb" id="tSlide" type="button" aria-label="Slide"><i></i></button>
+  <button class="tb" id="tJump" type="button" aria-label="Jump"><i></i></button>
   <button class="tb" id="tItem" type="button" aria-label="Use item"></button>
 </div>
 
@@ -169,9 +213,11 @@
 <script src="js/data.js"></script>
 <script src="js/world.js"></script>
 <script src="js/art.js"></script>
+<script src="js/scene.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/race.js"></script>
 <script src="js/net.js"></script>
+<script src="js/fx.js"></script>
 <script src="js/ui.js"></script>
 </body>
 </html>

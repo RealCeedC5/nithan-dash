@@ -145,7 +145,7 @@ function newRunner(id, name, look, opts = {}) {
     coyote: 0, jbuf: 0, jumps: 1, holdJump: false, sliding: false, slideT: 0, crouch: false,
     stunT: 0, frozenT: 0, slowT: 0, boostT: 0, wingT: 0, shieldT: 0, invT: 0, springT: 0, slipT: 0,
     dead: false, respawnT: 0, cp: 0, item: null, rolling: 0, fin: false, finT: 0, boxT: {},
-    anim: 'idle', animT: 0, spin: 0, speedMul: 1, mud: false, lastStep: 0, prog: 0, ai: {},
+    anim: 'idle', animT: 0, spin: 0, speedMul: 1, mud: false, lastStep: 0, prog: 0, ai: {}, landV: 0, draft: 0, draftOn: false,
     fx: [], // events for sound / particles, drained by the renderer
   };
 }
@@ -189,13 +189,13 @@ function moveY(lv, r, dy) {
     for (let tx = Math.floor(l / TILE); tx <= Math.floor(rt / TILE); tx++) {
       const c = tileAt(lv, tx, ty);
       if (isSolidT(c) || (c === T.ONEWAY && prevBottom <= ty * TILE + 0.5)) {
-        r.y = ty * TILE; r.vy = 0; r.ground = true; r.onPlat = null; r.mud = c === T.MUD; break;
+        r.landV = r.vy; r.y = ty * TILE; r.vy = 0; r.ground = true; r.onPlat = null; r.mud = c === T.MUD; break;
       }
     }
     if (!r.ground) {
       for (const p of lv.plats) {
         if (p.gone || rt < p.x || l > p.x + p.w) continue;
-        if (prevBottom <= p.py + 1.5 && r.y >= p.y) { r.y = p.y; r.vy = 0; r.ground = true; r.onPlat = p; r.mud = false; break; }
+        if (prevBottom <= p.py + 1.5 && r.y >= p.y) { r.landV = r.vy; r.y = p.y; r.vy = 0; r.ground = true; r.onPlat = p; r.mud = false; break; }
       }
     }
     if (r.ground && !was && dy > 2) r.fx.push('land');
@@ -273,6 +273,7 @@ function stepRunner(lv, r, inp, dt, t) {
   let maxV = PH.run * r.speedMul;
   if (r.mud && r.ground) maxV *= 0.55;
   if (r.slowT > 0) maxV *= 0.6;
+  if (r.draft > 0.6 && r.ground) maxV *= 1.07;                       // slipstream: tucked in behind another runner
   if (r.wingT > 0) maxV = Math.max(maxV, 195);
   if (r.boostT > 0) maxV = PH.boost;
   if (r.crouch) maxV = Math.min(maxV, PH.crawl);

@@ -22,7 +22,7 @@ function raceClock() {
 function startRace(levelIdx, entries, mode, startAt) {
   RACE.on = true; RACE.mode = mode; RACE.levelIdx = levelIdx; RACE.lv = buildLevel(levelIdx);
   RACE.traps = []; RACE.orbs = []; RACE.rains = []; RACE.pops = [];
-  RACE.ended = false; RACE.results = null; RACE.firstFinishAt = null; RACE.endAt = null;
+  RACE.ended = false; RACE.results = null; RACE.firstFinishAt = null; RACE.endAt = null; RACE.go = false;
   RACE.runners = entries.map((e, i) => {
     const r = newRunner(e.id, e.name, e.look, { bot: e.bot, local: e.local, skill: e.skill ?? RACE.botSkill });
     placeAtStart(r, RACE.lv, i);
@@ -332,6 +332,27 @@ function botRubberBand() {
   }
 }
 
+/* tucking in close behind another runner builds a slipstream */
+function updateDraft(dt) {
+  for (const r of RACE.runners) {
+    if (r.remote) continue;
+    let on = false;
+    if (r.ground && !r.fin && !r.dead && Math.abs(r.vx) > 110)
+      for (const o of RACE.runners) { const dx = (o.x - r.x) * (r.face || 1); if (o !== r && !o.dead && !o.fin && dx > 12 && dx < 64 && Math.abs(o.y - r.y) < 12 && Math.abs(o.vx) > 90) { on = true; break; } }
+    r.draftOn = on;
+    r.draft = on ? Math.min(1.3, r.draft + dt) : Math.max(0, r.draft - dt * 2.5);
+  }
+}
+
+/* a boost for pressing forward just before GO; bots get lucky now and then */
+function perfectStart(input) {
+  for (const r of RACE.runners) {
+    if (r.remote) continue;
+    const ok = r.bot || window.AUTOPILOT ? Math.random() < [0.12, 0.3, 0.5][r.skill] : input.right && input.rightAt > -0.32 && input.rightAt <= 0.03;
+    if (ok) { r.boostT = r.bot ? 0.7 : 1.0; r.fx.push('perfect'); }
+  }
+}
+
 /* ---------- per-frame update ---------- */
 function updateRace(input) {
   if (!RACE.on) return;
@@ -342,7 +363,8 @@ function updateRace(input) {
   for (let i = 0; i < steps; i++) {
     const t = RACE.simT + STEP;
     updatePlats(lv, t, STEP);
-    if ((i & 7) === 0) botRubberBand();
+    if ((i & 7) === 0) { botRubberBand(); updateDraft(STEP * 8); }
+    if (!RACE.go && t >= 0) { RACE.go = true; perfectStart(input); }
     for (const r of RACE.runners) {
       if (r.remote) continue;
       let inp;
